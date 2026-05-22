@@ -1,0 +1,89 @@
+======================================================================
+                 AG ILETISIMI DERSI - I. PROJE TESLIMI
+           COK KULLANICILI ORTAK RESIM CIZME UYGULAMASI
+                       TESLIM BILGI DOSYASI
+======================================================================
+
+----------------------------------------------------------------------
+1. GRUP / OGRENCI BILGILERI
+----------------------------------------------------------------------
+(Odev teslim kurallarina gore gruptaki her ogrencinin bilgileri burada 
+bulunmalidir. Bilgisi bulunmayan ogrenci gruba dahil kabul edilmez.)
+
+Grup Adi / Takma Adi: [Varsa yaziniz veya bos birakiniz]
+
+* Ogrenci 1:
+  - Adi Soyadi: [BURAYA YAZINIZ]
+  - Ogrenci No: [BURAYA YAZINIZ]
+
+* Ogrenci 2:
+  - Adi Soyadi: [BURAYA YAZINIZ]
+  - Ogrenci No: [BURAYA YAZINIZ]
+
+* Ogrenci 3:
+  - Adi Soyadi: [BURAYA YAZINIZ]
+  - Ogrenci No: [BURAYA YAZINIZ]
+
+----------------------------------------------------------------------
+2. PROJE TANITIM VE ANLATIM VIDEOSU YOLU (GOOGLE DRIVE)
+----------------------------------------------------------------------
+(Kendi goruntunuz ve sesinizin dahil edildigi, 30 dakikayi gecmeyen
+ve kritik kod bloklarini, calisma yapisini anlatan video linki.)
+
+Google Drive Video Baglantisi (Link):
+[BURAYA GOOGLE DRIVE VIDEO LINKINI YAZINIZ]
+
+(Not: Baglantinin "Herkesle Paylasildi" veya hocanin erisebilecegi sekilde
+acik oldugundan emin olunuz!)
+
+----------------------------------------------------------------------
+3. PROJE KLASOR YAPISI VE KRITIK KOD BLOGU ACIKLAMASI
+----------------------------------------------------------------------
+Proje tamamen yalin soket haberleşmesi (net modulu) ile asenkron ve 
+olay gudumlu (NonBlocking) olarak JavaScript dilinde kodlanmistir.
+
+* shared/
+  - protocol.js: Ortak mesaj tipleri (MessageType), FTP benzeri ozel
+    TCP paket cerceveleme/kodlama (encode) fonksiyonu ve paketleri 
+    ayristiran sonlu durum parser'i (ProtocolParser) barindirir.
+
+* server/
+  - index.js: Ana TCP Sunucusu (Dinleyici). Baglantilari kabul eder 
+    ve gelen paketleri parser'a besleyerek ilgili event'leri tetikler.
+  - fileManager.js: Disk CRUD islemlerini ve degisiklik yapilan dosyalari
+    30 saniyede bir diske yazan otomatik kaydetme motorunu yonetir.
+  - sessionManager.js: Aktif kullanici oturumlarini, tekil id'leri ve
+    hangi kullanicinin hangi dosyayi duzenledigini takip eder.
+  - storage/: Sunucuda otomatik kaydedilen tuval JSON dosyalarinin
+    saklandigi kalici klasordur.
+
+* client/
+  - main.js: Electron Ana Sureci (Main Process). Sunucu ile dogrudan 
+    TCP soket baglantisini acar ve kapatir.
+  - preload.js: IPC Guvenli Kopru Katmani (ContextBridge). Renderer surecine
+    soket API'sini guvenli sekilde sunar.
+  - renderer/: Arayuz dosyalarini (index.html, styles.css), cizim ve 
+    katman motorunu (canvas.js, app.js, ui.js) barindirir.
+
+----------------------------------------------------------------------
+4. KURULUM VE CALISTIRMA ADIMLARI
+----------------------------------------------------------------------
+Projenin hocanin sisteminde clean sonrasi calismasi icin asagidaki adimlar
+uygulanmalidir:
+
+1. Adim: Istemci (Client) Bagimliliklarini Yukleme
+   Terminalden "client" klasorune gidip "npm install" calistirin.
+   (Teslim paketi 8MB limitinde olabilmesi icin "node_modules" silinmis
+   olarak teslim edilmektedir. Bu komut eksik paketleri kurar.)
+
+2. Adim: Sunucuyu (Server) Baslatma
+   Yeni bir terminal penceresinde "server" klasorune gidin ve sunucuyu 
+   baslatin:
+   > node index.js
+
+3. Adim: Istemcileri (Arayuzleri) Calistirma
+   "client" klasorune gidip Electron arayuzunu calistirin:
+   > npx electron .
+   (Cok kullanicili test senaryosu icin bu komutu birden fazla terminalde 
+   ayri ayri calistirarak birden fazla ekran acabilirsiniz.)
+======================================================================

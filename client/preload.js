@@ -1,14 +1,9 @@
 'use strict';
 
-// =====================================================
-// MultiUserPaint — Electron Preload Script
-// contextBridge ile renderer'a güvenli API sunumu
-// =====================================================
-
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
-  // --- Bağlantı ---
+
   connect: (host, port, username) =>
     ipcRenderer.invoke('connect', { host, port, username }),
 
@@ -18,7 +13,6 @@ contextBridge.exposeInMainWorld('api', {
   getConnectionStatus: () =>
     ipcRenderer.invoke('get-connection-status'),
 
-  // --- Dosya İşlemleri ---
   fileCreate: (fileName, width, height) =>
     ipcRenderer.invoke('file-create', { fileName, width, height }),
 
@@ -31,21 +25,18 @@ contextBridge.exposeInMainWorld('api', {
   fileClose: (fileId) =>
     ipcRenderer.invoke('file-close', { fileId }),
 
-  // --- Çizim ---
   drawAction: (fileId, layerId, action) =>
     ipcRenderer.invoke('draw-action', { fileId, layerId, action }),
 
   canvasClear: (fileId, layerId) =>
     ipcRenderer.invoke('canvas-clear', { fileId, layerId }),
 
-  // --- Pano (Clipboard) ---
   cut: (fileId, layerId, selection) =>
     ipcRenderer.invoke('cut', { fileId, layerId, selection }),
 
   paste: (fileId, layerId, pasteData, position) =>
     ipcRenderer.invoke('paste', { fileId, layerId, pasteData, position }),
 
-  // --- Katman ---
   layerAdd: (fileId, name) =>
     ipcRenderer.invoke('layer-add', { fileId, name }),
 
@@ -61,22 +52,26 @@ contextBridge.exposeInMainWorld('api', {
   layerOpacity: (fileId, layerId, opacity) =>
     ipcRenderer.invoke('layer-opacity', { fileId, layerId, opacity }),
 
-  // --- Genel Mesaj Gönderimi ---
-  sendMessage: (type, data) =>
-    ipcRenderer.invoke('send-message', { type, data }),
-
-  // --- Olayları Dinle ---
-  onServerMessage: (callback) => {
-    ipcRenderer.on('server-message', (event, msg) => callback(msg));
+  onServerEvent: (callback) => {
+    ipcRenderer.on('server-event', (event, payload) => callback(payload));
   },
 
   onConnectionLost: (callback) => {
-    ipcRenderer.on('connection-lost', () => callback());
+    ipcRenderer.on('connection-lost', (event, data) => callback(data));
   },
 
-  // --- Olay Dinleyicilerini Temizle ---
+  onReconnecting: (callback) => {
+    ipcRenderer.on('reconnecting', (event, data) => callback(data));
+  },
+
+  onReconnectFailed: (callback) => {
+    ipcRenderer.on('reconnect-failed', () => callback());
+  },
+
   removeAllListeners: () => {
-    ipcRenderer.removeAllListeners('server-message');
+    ipcRenderer.removeAllListeners('server-event');
     ipcRenderer.removeAllListeners('connection-lost');
+    ipcRenderer.removeAllListeners('reconnecting');
+    ipcRenderer.removeAllListeners('reconnect-failed');
   }
 });

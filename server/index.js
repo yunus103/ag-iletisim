@@ -1,42 +1,49 @@
 'use strict';
 
-
-const net = require('net');
-const { MessageType, ProtocolParser, encode } = require('../shared/protocol');
+const http = require('http');
+const { Server } = require('socket.io');
+const { EventType } = require('../shared/events');
 const SessionManager = require('./sessionManager');
 const FileManager = require('./fileManager');
 
 const PORT = process.env.PORT || 5000;
 const HOST = '0.0.0.0';
-const HEARTBEAT_INTERVAL = 15000;
 
 class PaintServer {
   constructor() {
     this.sessionManager = new SessionManager();
     this.fileManager = new FileManager();
 
+    this.httpServer = http.createServer();
 
-    this.server = net.createServer({ allowHalfOpen: false }, (socket) => {
+    this.io = new Server(this.httpServer, {
+      cors: {
+        origin: '*',                
+        methods: ['GET', 'POST']
+      },
+      pingInterval: 15000,          
+      pingTimeout: 10000,           
+      maxHttpBufferSize: 5e6,       
+      connectTimeout: 10000,        
+      transports: ['websocket', 'polling']  
+    });
+
+    this.io.on('connection', (socket) => {
       this._handleConnection(socket);
     });
-
-
-    this.heartbeatTimer = setInterval(() => this._sendHeartbeats(), HEARTBEAT_INTERVAL);
   }
 
-  /**
-   * Sunucuyu başlat
-   */
   start() {
-    this.server.listen(PORT, HOST, () => {
+    this.httpServer.listen(PORT, HOST, () => {
       console.log('============================================');
-      console.log('  MultiUserPaint TCP Sunucu');
+      console.log('  MultiUserPaint Socket.IO Sunucu (v2)');
       console.log(`  Dinleniyor: ${HOST}:${PORT}`);
-      console.log('  Protokol: TCP (NonBlocking, Event-Driven)');
+      console.log('  Protokol: Socket.IO (WebSocket + Polling)');
+      console.log('  Heartbeat: Otomatik (ping/pong)');
       console.log('============================================');
     });
 
-    this.server.on('error', (err) => {
+    this.httpServer.on('error', (err) => {
       console.error('[Sunucu] Hata:', err.message);
       if (err.code === 'EADDRINUSE') {
         console.error(`[Sunucu] Port ${PORT} zaten kullanılıyor!`);
@@ -44,548 +51,462 @@ class PaintServer {
       }
     });
 
-
     process.on('SIGINT', () => this._shutdown());
     process.on('SIGTERM', () => this._shutdown());
   }
 
-
   _handleConnection(socket) {
-    const remoteAddr = `${socket.remoteAddress}:${socket.remotePort}`;
-    console.log(`[Bağlantı] Yeni bağlantı: ${remoteAddr}`);
+    const remoteAddr = socket.handshake.address;
+    console.log(`[Bağlantı] Yeni WebSocket bağlantısı: ${remoteAddr} (${socket.id})`);
 
-
-    const parser = new ProtocolParser();
-
-
-    parser.onMessage = (msg) => {
-      this._handleMessage(socket, msg);
-    };
-
-
-    socket.on('data', (data) => {
-      parser.feed(data);
+    socket.on(EventType.USER_CONNECT, (data) => {
+      this._onConnect(socket, data);
     });
 
-
-    socket.on('close', () => {
-      this._handleDisconnect(socket);
+    socket.on(EventType.FILE_CREATE, (data) => {
+      this._onFileCreate(socket, data);
+    });
+    socket.on(EventType.FILE_LIST, () => {
+      this._onFileListReq(socket);
+    });
+    socket.on(EventType.FILE_OPEN, (data) => {
+      this._onFileOpen(socket, data);
+    });
+    socket.on(EventType.FILE_CLOSE, (data) => {
+      this._onFileClose(socket, data);
+    });
+    socket.on(EventType.FILE_SHARE, (data) => {
+      this._onFileShare(socket, data);
+    });
+    socket.on(EventType.FILE_DELETE, (data) => {
+      this._onFileDelete(socket, data);
     });
 
-
-    socket.on('error', (err) => {
-      console.error(`[Bağlantı] Soket hatası (${remoteAddr}):`, err.message);
+    socket.on(EventType.DRAW_ACTION, (data) => {
+      this._onDrawAction(socket, data);
+    });
+    socket.on(EventType.CANVAS_CLEAR, (data) => {
+      this._onCanvasClear(socket, data);
     });
 
+    socket.on(EventType.CLIPBOARD_CUT, (data) => {
+      this._onCut(socket, data);
+    });
+    socket.on(EventType.CLIPBOARD_PASTE, (data) => {
+      this._onPaste(socket, data);
+    });
 
-    socket.setKeepAlive(true, 10000);
-    socket.setNoDelay(true);
+    socket.on(EventType.LAYER_ADD, (data) => {
+      this._onLayerAdd(socket, data);
+    });
+    socket.on(EventType.LAYER_REMOVE, (data) => {
+      this._onLayerRemove(socket, data);
+    });
+    socket.on(EventType.LAYER_RENAME, (data) => {
+      this._onLayerRename(socket, data);
+    });
+    socket.on(EventType.LAYER_VISIBILITY, (data) => {
+      this._onLayerVisibility(socket, data);
+    });
+    socket.on(EventType.LAYER_OPACITY, (data) => {
+      this._onLayerOpacity(socket, data);
+    });
+    socket.on(EventType.LAYER_REORDER, (data) => {
+      this._onLayerReorder(socket, data);
+    });
+
+    socket.on('disconnect', (reason) => {
+      this._handleDisconnect(socket, reason);
+    });
   }
 
-  _handleMessage(socket, msg) {
-    const { type } = msg;
-
+  _onConnect(socket, data) {
     try {
-      switch (type) {
+      const { username } = data;
+      const result = this.sessionManager.registerUser(socket.id, username);
 
-        case MessageType.CONNECT:
-          this._onConnect(socket, msg);
-          break;
-        case MessageType.DISCONNECT:
-          this._onDisconnect(socket);
-          break;
-        case MessageType.HEARTBEAT:
-          this._send(socket, MessageType.HEARTBEAT, { timestamp: Date.now() });
-          break;
+      if (result.success) {
 
+        socket.join('lobby');
 
-        case MessageType.FILE_CREATE:
-          this._onFileCreate(socket, msg);
-          break;
-        case MessageType.FILE_LIST_REQ:
-          this._onFileListReq(socket);
-          break;
-        case MessageType.FILE_OPEN:
-          this._onFileOpen(socket, msg);
-          break;
-        case MessageType.FILE_CLOSE:
-          this._onFileClose(socket, msg);
-          break;
-        case MessageType.FILE_SHARE:
-          this._onFileShare(socket, msg);
-          break;
-        case MessageType.FILE_DELETE:
-          this._onFileDelete(socket, msg);
-          break;
+        socket.emit(EventType.USER_CONNECTED, {
+          userId: result.userId,
+          username: username,
+          message: 'Bağlantı başarılı'
+        });
 
+        socket.to('lobby').emit(EventType.USER_JOINED, {
+          userId: result.userId,
+          username: username
+        });
 
-        case MessageType.DRAW_ACTION:
-          this._onDrawAction(socket, msg);
-          break;
-        case MessageType.CANVAS_CLEAR:
-          this._onCanvasClear(socket, msg);
-          break;
-
-
-        case MessageType.CUT:
-          this._onCut(socket, msg);
-          break;
-        case MessageType.PASTE:
-          this._onPaste(socket, msg);
-          break;
-
-
-        case MessageType.LAYER_ADD:
-          this._onLayerAdd(socket, msg);
-          break;
-        case MessageType.LAYER_REMOVE:
-          this._onLayerRemove(socket, msg);
-          break;
-        case MessageType.LAYER_RENAME:
-          this._onLayerRename(socket, msg);
-          break;
-        case MessageType.LAYER_VISIBILITY:
-          this._onLayerVisibility(socket, msg);
-          break;
-        case MessageType.LAYER_OPACITY:
-          this._onLayerOpacity(socket, msg);
-          break;
-        case MessageType.LAYER_REORDER:
-          this._onLayerReorder(socket, msg);
-          break;
-
-        default:
-          this._send(socket, MessageType.ERROR, {
-            message: `Bilinmeyen mesaj tipi: ${type}`
-          });
+        this._broadcastUserList();
+      } else {
+        socket.emit(EventType.USER_REJECTED, {
+          reason: result.reason
+        });
       }
     } catch (err) {
-      console.error(`[Sunucu] Mesaj işleme hatası (${type}):`, err.message);
-      this._send(socket, MessageType.ERROR, { message: 'Sunucu hatası' });
+      console.error('[Sunucu] user:connect hatası:', err.message);
+      socket.emit(EventType.ERROR_SERVER, { code: 'INTERNAL_ERROR', message: 'Sunucu hatası' });
     }
   }
 
-
-
-
-  _onConnect(socket, msg) {
-    const { username } = msg;
-    const result = this.sessionManager.registerUser(socket, username);
-
-    if (result.success) {
-
-      this._send(socket, MessageType.CONNECT_ACK, {
-        userId: result.userId,
-        username: username,
-        message: 'Bağlantı başarılı'
-      });
-
-
-      this._broadcast(MessageType.USER_JOIN, {
-        userId: result.userId,
-        username: username
-      }, socket);
-
-
-      this._broadcastUserList();
-    } else {
-      this._send(socket, MessageType.CONNECT_REJECT, {
-        reason: result.reason
-      });
-    }
-  }
-
-  _onDisconnect(socket) {
-    const session = this.sessionManager.getSession(socket);
+  _handleDisconnect(socket, reason) {
+    const session = this.sessionManager.getSession(socket.id);
     if (session) {
+      console.log(`[Bağlantı] Bağlantı koptu: ${session.username} (sebep: ${reason})`);
 
       for (const fileId of session.openFiles) {
         this.fileManager.closeFile(fileId, session.username);
+
       }
 
-      this._send(socket, MessageType.DISCONNECT_ACK, {});
-
-
-      this._broadcast(MessageType.USER_LEAVE, {
+      socket.to('lobby').emit(EventType.USER_LEFT, {
         userId: session.userId,
         username: session.username
-      }, socket);
+      });
 
-      this.sessionManager.removeUser(socket);
-      this._broadcastUserList();
-    }
-    socket.end();
-  }
-
-  _handleDisconnect(socket) {
-    const session = this.sessionManager.getSession(socket);
-    if (session) {
-      console.log(`[Bağlantı] Bağlantı koptu: ${session.username}`);
-
-
-      for (const fileId of session.openFiles) {
-        this.fileManager.closeFile(fileId, session.username);
-      }
-
-
-      this._broadcast(MessageType.USER_LEAVE, {
-        userId: session.userId,
-        username: session.username
-      }, socket);
-
-      this.sessionManager.removeUser(socket);
+      this.sessionManager.removeUser(socket.id);
       this._broadcastUserList();
     }
   }
 
+  _onFileCreate(socket, data) {
+    try {
+      const session = this.sessionManager.getSession(socket.id);
+      if (!session) return this._sendError(socket, 'SESSION_NOT_FOUND', 'Oturum bulunamadı');
 
+      const { fileName, width, height } = data;
+      const fileInfo = this.fileManager.createFile(
+        session.username,
+        fileName,
+        width || 1200,
+        height || 800
+      );
 
+      socket.emit(EventType.FILE_CREATED, { file: fileInfo });
 
-  _onFileCreate(socket, msg) {
-    const session = this.sessionManager.getSession(socket);
-    if (!session) return this._sendError(socket, 'Oturum bulunamadı');
-
-    const { fileName, width, height } = msg;
-    const fileInfo = this.fileManager.createFile(
-      session.username,
-      fileName,
-      width || 1200,
-      height || 800
-    );
-
-    this._send(socket, MessageType.FILE_CREATE_ACK, { file: fileInfo });
-
-
-    this._broadcast(MessageType.FILE_NOTIFY, {
-      action: 'created',
-      file: fileInfo,
-      by: session.username
-    }, socket);
+      socket.to('lobby').emit(EventType.FILE_NOTIFY, {
+        action: 'created',
+        file: fileInfo,
+        by: session.username
+      });
+    } catch (err) {
+      console.error('[Sunucu] file:create hatası:', err.message);
+      socket.emit(EventType.ERROR_SERVER, { code: 'INTERNAL_ERROR', message: 'Sunucu hatası' });
+    }
   }
 
   _onFileListReq(socket) {
-    const files = this.fileManager.getFileList();
-    this._send(socket, MessageType.FILE_LIST_RES, { files });
+    try {
+      const files = this.fileManager.getFileList();
+      socket.emit(EventType.FILE_LIST_RESULT, { files });
+    } catch (err) {
+      console.error('[Sunucu] file:list hatası:', err.message);
+      socket.emit(EventType.ERROR_SERVER, { code: 'INTERNAL_ERROR', message: 'Sunucu hatası' });
+    }
   }
 
-  _onFileOpen(socket, msg) {
-    const session = this.sessionManager.getSession(socket);
-    if (!session) return this._sendError(socket, 'Oturum bulunamadı');
+  _onFileOpen(socket, data) {
+    try {
+      const session = this.sessionManager.getSession(socket.id);
+      if (!session) return this._sendError(socket, 'SESSION_NOT_FOUND', 'Oturum bulunamadı');
 
-    const { fileId } = msg;
-    const fileData = this.fileManager.openFile(fileId, session.username);
+      const { fileId } = data;
+      const fileData = this.fileManager.openFile(fileId, session.username);
 
-    if (fileData) {
-      this.sessionManager.openFile(socket, fileId);
-      this._send(socket, MessageType.FILE_OPEN_ACK, { file: fileData });
+      if (fileData) {
+        this.sessionManager.openFile(socket.id, fileId);
 
+        socket.join(`file:${fileId}`);
 
-      this._broadcastToFile(fileId, MessageType.USER_JOIN, {
+        socket.emit(EventType.FILE_OPENED, { file: fileData });
+
+        socket.to(`file:${fileId}`).emit(EventType.USER_JOINED, {
+          username: session.username,
+          fileId: fileId
+        });
+      } else {
+        this._sendError(socket, 'FILE_NOT_FOUND', 'Dosya bulunamadı');
+      }
+    } catch (err) {
+      console.error('[Sunucu] file:open hatası:', err.message);
+      socket.emit(EventType.ERROR_SERVER, { code: 'INTERNAL_ERROR', message: 'Sunucu hatası' });
+    }
+  }
+
+  _onFileClose(socket, data) {
+    try {
+      const session = this.sessionManager.getSession(socket.id);
+      if (!session) return;
+
+      const { fileId } = data;
+      this.fileManager.closeFile(fileId, session.username);
+      this.sessionManager.closeFile(socket.id, fileId);
+
+      socket.leave(`file:${fileId}`);
+
+      socket.emit(EventType.FILE_CLOSED, { fileId });
+
+      socket.to(`file:${fileId}`).emit(EventType.USER_LEFT, {
         username: session.username,
         fileId: fileId
-      }, socket);
-    } else {
-      this._sendError(socket, 'Dosya bulunamadı');
+      });
+    } catch (err) {
+      console.error('[Sunucu] file:close hatası:', err.message);
     }
   }
 
-  _onFileClose(socket, msg) {
-    const session = this.sessionManager.getSession(socket);
-    if (!session) return;
+  _onFileShare(socket, data) {
+    try {
+      const session = this.sessionManager.getSession(socket.id);
+      if (!session) return;
 
-    const { fileId } = msg;
-    this.fileManager.closeFile(fileId, session.username);
-    this.sessionManager.closeFile(socket, fileId);
+      const { fileId, shared } = data;
+      this.fileManager.setShared(fileId, shared !== false);
+      socket.emit(EventType.FILE_SHARED, { fileId, shared });
 
-    this._send(socket, MessageType.FILE_CLOSE_ACK, { fileId });
-
-
-    this._broadcastToFile(fileId, MessageType.USER_LEAVE, {
-      username: session.username,
-      fileId: fileId
-    }, socket);
-  }
-
-  _onFileShare(socket, msg) {
-    const session = this.sessionManager.getSession(socket);
-    if (!session) return;
-
-    const { fileId, shared } = msg;
-    this.fileManager.setShared(fileId, shared !== false);
-    this._send(socket, MessageType.FILE_SHARE_ACK, { fileId, shared });
-
-
-    this._broadcast(MessageType.FILE_NOTIFY, {
-      action: shared ? 'shared' : 'unshared',
-      file: this.fileManager.getFileInfo(fileId),
-      by: session.username
-    }, socket);
-  }
-
-  _onFileDelete(socket, msg) {
-    const session = this.sessionManager.getSession(socket);
-    if (!session) return;
-
-    const { fileId } = msg;
-    const success = this.fileManager.deleteFile(fileId);
-    this._send(socket, MessageType.FILE_DELETE_ACK, { fileId, success });
-
-    if (success) {
-      this._broadcast(MessageType.FILE_NOTIFY, {
-        action: 'deleted',
-        fileId,
+      socket.to('lobby').emit(EventType.FILE_NOTIFY, {
+        action: shared ? 'shared' : 'unshared',
+        file: this.fileManager.getFileInfo(fileId),
         by: session.username
       });
+    } catch (err) {
+      console.error('[Sunucu] file:share hatası:', err.message);
     }
   }
 
+  _onFileDelete(socket, data) {
+    try {
+      const session = this.sessionManager.getSession(socket.id);
+      if (!session) return;
 
+      const { fileId } = data;
+      const success = this.fileManager.deleteFile(fileId);
+      socket.emit(EventType.FILE_DELETED, { fileId, success });
 
+      if (success) {
 
-
-
-
-  _onDrawAction(socket, msg) {
-    const session = this.sessionManager.getSession(socket);
-    if (!session) return;
-
-    const { fileId, layerId, action } = msg;
-
-
-    this.fileManager.addDrawAction(fileId, layerId, {
-      ...action,
-      userId: session.userId,
-      username: session.username,
-      timestamp: Date.now()
-    });
-
-
-    this._broadcastToFile(fileId, MessageType.DRAW_BROADCAST, {
-      fileId,
-      layerId,
-      action: {
-        ...action,
-        username: session.username
-      }
-    }, socket);
-  }
-
-  _onCanvasClear(socket, msg) {
-    const session = this.sessionManager.getSession(socket);
-    if (!session) return;
-
-    const { fileId, layerId } = msg;
-    this.fileManager.clearCanvas(fileId, layerId);
-
-    this._broadcastToFile(fileId, MessageType.CANVAS_CLEAR_BROADCAST, {
-      fileId,
-      layerId,
-      by: session.username
-    }, socket);
-  }
-
-
-
-
-  _onCut(socket, msg) {
-    const session = this.sessionManager.getSession(socket);
-    if (!session) return;
-
-    const { fileId, layerId, selection } = msg;
-
-
-    this._broadcastToFile(fileId, MessageType.CUT_BROADCAST, {
-      fileId,
-      layerId,
-      selection,
-      by: session.username
-    }, socket);
-  }
-
-  _onPaste(socket, msg) {
-    const session = this.sessionManager.getSession(socket);
-    if (!session) return;
-
-    const { fileId, layerId, pasteData, position } = msg;
-
-
-    if (pasteData && pasteData.actions) {
-      for (const action of pasteData.actions) {
-        this.fileManager.addDrawAction(fileId, layerId, {
-          ...action,
-          userId: session.userId,
-          timestamp: Date.now()
+        this.io.to('lobby').emit(EventType.FILE_NOTIFY, {
+          action: 'deleted',
+          fileId,
+          by: session.username
         });
       }
-    }
-
-
-    this._broadcastToFile(fileId, MessageType.PASTE_BROADCAST, {
-      fileId,
-      layerId,
-      pasteData,
-      position,
-      by: session.username
-    }, socket);
-  }
-
-
-
-
-  _onLayerAdd(socket, msg) {
-    const session = this.sessionManager.getSession(socket);
-    if (!session) return;
-
-    const { fileId, name } = msg;
-    const layer = this.fileManager.addLayer(fileId, name);
-
-    if (layer) {
-      this._send(socket, MessageType.LAYER_ADD_ACK, { fileId, layer });
-      this._broadcastToFile(fileId, MessageType.LAYER_UPDATE, {
-        fileId,
-        action: 'add',
-        layer,
-        by: session.username
-      }, socket);
+    } catch (err) {
+      console.error('[Sunucu] file:delete hatası:', err.message);
     }
   }
 
-  _onLayerRemove(socket, msg) {
-    const session = this.sessionManager.getSession(socket);
-    if (!session) return;
+  _onDrawAction(socket, data) {
+    try {
+      const session = this.sessionManager.getSession(socket.id);
+      if (!session) return;
 
-    const { fileId, layerId } = msg;
-    const success = this.fileManager.removeLayer(fileId, layerId);
+      const { fileId, layerId, action } = data;
 
-    this._send(socket, MessageType.LAYER_REMOVE_ACK, { fileId, layerId, success });
-    if (success) {
-      this._broadcastToFile(fileId, MessageType.LAYER_UPDATE, {
+      this.fileManager.addDrawAction(fileId, layerId, {
+        ...action,
+        userId: session.userId,
+        username: session.username,
+        timestamp: Date.now()
+      });
+
+      socket.to(`file:${fileId}`).emit(EventType.DRAW_BROADCAST, {
         fileId,
-        action: 'remove',
+        layerId,
+        action: {
+          ...action,
+          username: session.username
+        }
+      });
+    } catch (err) {
+      console.error('[Sunucu] draw:action hatası:', err.message);
+    }
+  }
+
+  _onCanvasClear(socket, data) {
+    try {
+      const session = this.sessionManager.getSession(socket.id);
+      if (!session) return;
+
+      const { fileId, layerId } = data;
+      this.fileManager.clearCanvas(fileId, layerId);
+
+      socket.to(`file:${fileId}`).emit(EventType.CANVAS_CLEARED, {
+        fileId,
         layerId,
         by: session.username
-      }, socket);
+      });
+    } catch (err) {
+      console.error('[Sunucu] canvas:clear hatası:', err.message);
     }
   }
 
-  _onLayerRename(socket, msg) {
-    const { fileId, layerId, name } = msg;
-    this.fileManager.renameLayer(fileId, layerId, name);
-    this._broadcastToFile(fileId, MessageType.LAYER_UPDATE, {
-      fileId, action: 'rename', layerId, name
-    }, socket);
+  _onCut(socket, data) {
+    try {
+      const session = this.sessionManager.getSession(socket.id);
+      if (!session) return;
+
+      const { fileId, layerId, selection } = data;
+
+      socket.to(`file:${fileId}`).emit(EventType.CLIPBOARD_CUT_BROADCAST, {
+        fileId,
+        layerId,
+        selection,
+        by: session.username
+      });
+    } catch (err) {
+      console.error('[Sunucu] clipboard:cut hatası:', err.message);
+    }
   }
 
-  _onLayerVisibility(socket, msg) {
-    const { fileId, layerId, visible } = msg;
-    this.fileManager.setLayerVisibility(fileId, layerId, visible);
-    this._broadcastToFile(fileId, MessageType.LAYER_UPDATE, {
-      fileId, action: 'visibility', layerId, visible
-    }, socket);
-  }
+  _onPaste(socket, data) {
+    try {
+      const session = this.sessionManager.getSession(socket.id);
+      if (!session) return;
 
-  _onLayerOpacity(socket, msg) {
-    const { fileId, layerId, opacity } = msg;
-    this.fileManager.setLayerOpacity(fileId, layerId, opacity);
-    this._broadcastToFile(fileId, MessageType.LAYER_UPDATE, {
-      fileId, action: 'opacity', layerId, opacity
-    }, socket);
-  }
+      const { fileId, layerId, pasteData, position } = data;
 
-  _onLayerReorder(socket, msg) {
-    const { fileId, layerIds } = msg;
-    this.fileManager.reorderLayers(fileId, layerIds);
-    this._broadcastToFile(fileId, MessageType.LAYER_UPDATE, {
-      fileId, action: 'reorder', layerIds
-    }, socket);
-  }
-
-
-
-
-
-
-
-  _send(socket, type, data = {}) {
-    if (!socket.destroyed) {
-      try {
-        socket.write(encode(type, data));
-      } catch (err) {
-        console.error('[Sunucu] Gönderme hatası:', err.message);
+      if (pasteData && pasteData.actions) {
+        for (const action of pasteData.actions) {
+          this.fileManager.addDrawAction(fileId, layerId, {
+            ...action,
+            userId: session.userId,
+            timestamp: Date.now()
+          });
+        }
       }
+
+      socket.to(`file:${fileId}`).emit(EventType.CLIPBOARD_PASTE_BROADCAST, {
+        fileId,
+        layerId,
+        pasteData,
+        position,
+        by: session.username
+      });
+    } catch (err) {
+      console.error('[Sunucu] clipboard:paste hatası:', err.message);
     }
   }
 
-  /**
-   * Hata mesajı gönder
-   */
-  _sendError(socket, message) {
-    this._send(socket, MessageType.ERROR, { message });
-  }
+  _onLayerAdd(socket, data) {
+    try {
+      const session = this.sessionManager.getSession(socket.id);
+      if (!session) return;
 
-  /**
-   * Tüm istemcilere yayınla (broadcast)
-   * @param {string} type
-   * @param {object} data
-   * @param {net.Socket} [excludeSocket] - Hariç tutulacak soket
-   */
-  _broadcast(type, data, excludeSocket = null) {
-    const sockets = this.sessionManager.getAllSockets(excludeSocket);
-    const frame = encode(type, data);
-    for (const sock of sockets) {
-      if (!sock.destroyed) {
-        try {
-          sock.write(frame);
-        } catch (err) { /* ignore */ }
+      const { fileId, name } = data;
+      const layer = this.fileManager.addLayer(fileId, name);
+
+      if (layer) {
+        socket.emit(EventType.LAYER_ADDED, { fileId, layer });
+        socket.to(`file:${fileId}`).emit(EventType.LAYER_UPDATE, {
+          fileId,
+          action: 'add',
+          layer,
+          by: session.username
+        });
       }
+    } catch (err) {
+      console.error('[Sunucu] layer:add hatası:', err.message);
     }
   }
 
-  /**
-   * Belirli bir dosyayı düzenleyen istemcilere yayınla
-   * @param {string} fileId
-   * @param {string} type
-   * @param {object} data
-   * @param {net.Socket} [excludeSocket]
-   */
-  _broadcastToFile(fileId, type, data, excludeSocket = null) {
-    const sockets = this.sessionManager.getSocketsEditingFile(fileId, excludeSocket);
-    const frame = encode(type, data);
-    for (const sock of sockets) {
-      if (!sock.destroyed) {
-        try {
-          sock.write(frame);
-        } catch (err) { /* ignore */ }
+  _onLayerRemove(socket, data) {
+    try {
+      const session = this.sessionManager.getSession(socket.id);
+      if (!session) return;
+
+      const { fileId, layerId } = data;
+      const success = this.fileManager.removeLayer(fileId, layerId);
+
+      socket.emit(EventType.LAYER_REMOVED, { fileId, layerId, success });
+      if (success) {
+        socket.to(`file:${fileId}`).emit(EventType.LAYER_UPDATE, {
+          fileId,
+          action: 'remove',
+          layerId,
+          by: session.username
+        });
       }
+    } catch (err) {
+      console.error('[Sunucu] layer:remove hatası:', err.message);
     }
   }
 
+  _onLayerRename(socket, data) {
+    try {
+      const { fileId, layerId, name } = data;
+      this.fileManager.renameLayer(fileId, layerId, name);
+      socket.to(`file:${fileId}`).emit(EventType.LAYER_UPDATE, {
+        fileId, action: 'rename', layerId, name
+      });
+    } catch (err) {
+      console.error('[Sunucu] layer:rename hatası:', err.message);
+    }
+  }
+
+  _onLayerVisibility(socket, data) {
+    try {
+      const { fileId, layerId, visible } = data;
+      this.fileManager.setLayerVisibility(fileId, layerId, visible);
+      socket.to(`file:${fileId}`).emit(EventType.LAYER_UPDATE, {
+        fileId, action: 'visibility', layerId, visible
+      });
+    } catch (err) {
+      console.error('[Sunucu] layer:visibility hatası:', err.message);
+    }
+  }
+
+  _onLayerOpacity(socket, data) {
+    try {
+      const { fileId, layerId, opacity } = data;
+      this.fileManager.setLayerOpacity(fileId, layerId, opacity);
+      socket.to(`file:${fileId}`).emit(EventType.LAYER_UPDATE, {
+        fileId, action: 'opacity', layerId, opacity
+      });
+    } catch (err) {
+      console.error('[Sunucu] layer:opacity hatası:', err.message);
+    }
+  }
+
+  _onLayerReorder(socket, data) {
+    try {
+      const { fileId, layerIds } = data;
+      this.fileManager.reorderLayers(fileId, layerIds);
+      socket.to(`file:${fileId}`).emit(EventType.LAYER_UPDATE, {
+        fileId, action: 'reorder', layerIds
+      });
+    } catch (err) {
+      console.error('[Sunucu] layer:reorder hatası:', err.message);
+    }
+  }
+
+  _sendError(socket, code, message) {
+    socket.emit(EventType.ERROR_SERVER, { code, message });
+  }
 
   _broadcastUserList() {
     const users = this.sessionManager.getUserList();
-    this._broadcast(MessageType.USER_LIST, { users });
+    this.io.to('lobby').emit(EventType.USER_LIST, { users });
   }
-
-
-  _sendHeartbeats() {
-    const frame = encode(MessageType.HEARTBEAT, { timestamp: Date.now() });
-    for (const socket of this.sessionManager.getAllSockets()) {
-      if (!socket.destroyed) {
-        try {
-          socket.write(frame);
-        } catch (err) { /* ignore */ }
-      }
-    }
-  }
-
 
   _shutdown() {
     console.log('\n[Sunucu] Kapatılıyor...');
-    clearInterval(this.heartbeatTimer);
     this.fileManager.shutdown();
-    this.server.close(() => {
-      console.log('[Sunucu] Kapatıldı.');
-      process.exit(0);
+
+    this.io.emit(EventType.ERROR_SERVER, {
+      code: 'SERVER_SHUTDOWN',
+      message: 'Sunucu kapatılıyor.'
+    });
+
+    this.io.close(() => {
+      console.log('[Sunucu] Socket.IO kapatıldı.');
+      this.httpServer.close(() => {
+        console.log('[Sunucu] HTTP sunucusu kapatıldı.');
+        process.exit(0);
+      });
     });
   }
 }

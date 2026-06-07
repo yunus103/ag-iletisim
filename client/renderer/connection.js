@@ -1,6 +1,3 @@
-// =====================================================
-// MultiUserPaint — Bağlantı ve Mesaj Yönetimi
-// =====================================================
 
 const AppState = {
   connected: false,
@@ -26,73 +23,114 @@ function getUserColor(username) {
   return UserColors[Math.abs(hash) % UserColors.length];
 }
 
-// Sunucu mesaj dinleyicisi
 function initConnection() {
-  window.api.onServerMessage((msg) => {
-    handleServerMessage(msg);
+
+  window.api.onServerEvent(({ event, data }) => {
+    handleServerEvent(event, data);
   });
 
-  window.api.onConnectionLost(() => {
+  window.api.onConnectionLost((info) => {
     AppState.connected = false;
     showScreen('login');
-    showLoginError('Sunucu bağlantısı koptu!');
+    showLoginError('Sunucu bağlantısı koptu! (' + (info?.reason || 'bilinmeyen') + ')');
+  });
+
+  window.api.onReconnecting((info) => {
+    console.log(`Yeniden bağlanma denemesi: ${info.attempt}`);
+  });
+
+  window.api.onReconnectFailed(() => {
+    AppState.connected = false;
+    showScreen('login');
+    showLoginError('Sunucuya yeniden bağlanılamadı. Lütfen tekrar deneyin.');
   });
 }
 
-function handleServerMessage(msg) {
-  switch (msg.type) {
-    case 'FILE_CREATE_ACK':
+function handleServerEvent(eventName, data) {
+  switch (eventName) {
+
+    case 'file:created':
       refreshFileList();
-      if (msg.file) openFileById(msg.file.fileId);
+      if (data.file) openFileById(data.file.fileId);
       break;
-    case 'FILE_LIST_RES':
-      AppState.files = msg.files || [];
+
+    case 'file:list:result':
+      AppState.files = data.files || [];
       renderFileList();
       break;
-    case 'FILE_OPEN_ACK':
-      onFileOpened(msg.file);
+
+    case 'file:opened':
+      onFileOpened(data.file);
       break;
-    case 'FILE_CLOSE_ACK':
-      onFileClosed(msg.fileId);
+
+    case 'file:closed':
+      onFileClosed(data.fileId);
       break;
-    case 'FILE_NOTIFY':
+
+    case 'file:notify':
       refreshFileList();
       break;
-    case 'DRAW_BROADCAST':
-      onRemoteDraw(msg);
+
+    case 'draw:broadcast':
+      onRemoteDraw(data);
       break;
-    case 'CANVAS_CLEAR_BROADCAST':
-      onRemoteClear(msg);
+
+    case 'canvas:cleared':
+      onRemoteClear(data);
       break;
-    case 'CUT_BROADCAST':
-      onRemoteCut(msg);
+
+    case 'clipboard:cut:broadcast':
+      onRemoteCut(data);
       break;
-    case 'PASTE_BROADCAST':
-      onRemotePaste(msg);
+
+    case 'clipboard:paste:broadcast':
+      onRemotePaste(data);
       break;
-    case 'LAYER_ADD_ACK':
-    case 'LAYER_REMOVE_ACK':
-    case 'LAYER_UPDATE':
-      onLayerUpdate(msg);
+
+    case 'layer:added':
+
+      if (data.fileId === AppState.currentFileId && AppState.currentFile) {
+        AppState.currentFile.layers.push(data.layer);
+        createCanvasLayer(data.layer.id, AppState.currentFile.width, AppState.currentFile.height, data.layer.order);
+        renderLayerList();
+        updateActiveLayerDisplay();
+      }
       break;
-    case 'USER_LIST':
-      AppState.users = msg.users || [];
+
+    case 'layer:removed':
+
+      if (data.fileId === AppState.currentFileId && AppState.currentFile && data.success) {
+        AppState.currentFile.layers = AppState.currentFile.layers.filter(l => l.id !== data.layerId);
+        removeCanvasLayer(data.layerId);
+        if (AppState.activeLayerId === data.layerId && AppState.currentFile.layers.length > 0) {
+          AppState.activeLayerId = AppState.currentFile.layers[0].id;
+        }
+        renderLayerList();
+        updateActiveLayerDisplay();
+      }
+      break;
+
+    case 'layer:update':
+
+      onLayerUpdate(data);
+      break;
+
+    case 'user:list':
+      AppState.users = data.users || [];
       renderUserList();
       break;
-    case 'USER_JOIN':
-    case 'USER_LEAVE':
+
+    case 'user:joined':
+    case 'user:left':
       refreshFileList();
       break;
-    case 'FILE_SAVE_ACK':
-      flashSaveStatus();
+
+    case 'error:server':
+      console.error('[Sunucu Hatası]', data.code, data.message);
       break;
-    case 'ERROR':
-      console.error('[Sunucu Hatası]', msg.message);
-      break;
-    case 'HEARTBEAT':
-      break;
+
     default:
-      console.log('[Mesaj]', msg.type, msg);
+      console.log('[Bilinmeyen Olay]', eventName, data);
   }
 }
 
@@ -147,7 +185,6 @@ function openFileById(fileId) {
   window.api.fileOpen(fileId);
 }
 
-// UI Helpers
 function showScreen(name) {
   document.getElementById('login-screen').classList.toggle('active', name === 'login');
   document.getElementById('app-screen').classList.toggle('active', name === 'app');

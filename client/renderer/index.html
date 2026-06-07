@@ -4,17 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MultiUserPaint — Çok Kullanıcılı Resim Düzenleyici</title>
-  <meta name="description" content="TCP tabanlı çok kullanıcılı eş zamanlı resim düzenleme masaüstü uygulaması">
+  <meta name="description" content="Socket.IO (WebSocket) tabanlı çok kullanıcılı eş zamanlı resim düzenleme masaüstü uygulaması">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-
-  <!-- ============================================= -->
-  <!-- GİRİŞ EKRANI (Login Screen) -->
-  <!-- ============================================= -->
   <div id="login-screen" class="screen active">
     <div class="login-container">
       <div class="login-logo">
@@ -35,7 +31,6 @@
         <h1 class="login-title">MultiUserPaint</h1>
         <p class="login-subtitle">Çok Kullanıcılı Resim Düzenleyici</p>
       </div>
-
       <div class="login-form">
         <div class="form-group">
           <label for="input-host">Sunucu Adresi</label>
@@ -55,19 +50,12 @@
         </button>
         <p id="login-error" class="error-text" style="display:none;"></p>
       </div>
-
       <div class="login-footer">
-        <p>TCP Soket Protokolü • Node.js • Electron</p>
+        <p>Socket.IO (WebSocket) • Node.js • Electron</p>
       </div>
     </div>
   </div>
-
-  <!-- ============================================= -->
-  <!-- ANA UYGULAMA (Main Application) -->
-  <!-- ============================================= -->
   <div id="app-screen" class="screen">
-
-    <!-- Üst Bar (Top Bar) -->
     <header id="top-bar">
       <div class="top-bar-left">
         <div class="app-logo-small">
@@ -81,11 +69,8 @@
         <div class="top-bar-divider"></div>
         <span id="current-file-name" class="file-name-display">Dosya seçilmedi</span>
       </div>
-
       <div class="top-bar-center">
-        <!-- Çizim araç çubuğu buraya taşınacak -->
       </div>
-
       <div class="top-bar-right">
         <div id="connection-status" class="status-badge connected">
           <span class="status-dot"></span>
@@ -97,13 +82,8 @@
         </button>
       </div>
     </header>
-
-    <!-- Ana İçerik -->
     <div id="main-content">
-
-      <!-- Sol Panel: Dosyalar + Araçlar -->
       <aside id="left-panel">
-        <!-- Dosya Gezgini -->
         <div class="panel-section" id="file-explorer-section">
           <div class="panel-header">
             <h3>📁 Dosyalar</h3>
@@ -116,8 +96,6 @@
             <li class="empty-state">Henüz dosya yok</li>
           </ul>
         </div>
-
-        <!-- Çizim Araçları -->
         <div class="panel-section" id="tools-section">
           <div class="panel-header">
             <h3>🖌️ Araçlar</h3>
@@ -148,8 +126,6 @@
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m19 11-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2a2 2 0 0 0 2.8 0L19 11Z"/><path d="m5 2 5 5"/><path d="M2 13h15"/><path d="M22 20a2 2 0 1 1-4 0c0-1.6 2-3 2-3s2 1.4 2 3Z"/></svg>
             </button>
           </div>
-
-          <!-- Renk ve Boyut -->
           <div class="tool-options">
             <div class="option-group">
               <label>Renk</label>
@@ -179,8 +155,6 @@
               <input type="range" id="brush-opacity" min="1" max="100" value="100">
             </div>
           </div>
-
-          <!-- Pano İşlemleri -->
           <div class="panel-header" style="margin-top:8px;">
             <h3>📋 Pano</h3>
           </div>
@@ -189,19 +163,14 @@
             <button id="btn-copy" class="btn btn-sm btn-ghost" title="Kopyala (Ctrl+C)">📋 Kopyala</button>
             <button id="btn-paste" class="btn btn-sm btn-ghost" title="Yapıştır (Ctrl+V)">📌 Yapıştır</button>
           </div>
-
-          <!-- Tuval İşlemleri -->
           <div class="canvas-actions">
             <button id="btn-clear-layer" class="btn btn-sm btn-danger" title="Aktif Katmanı Temizle">🗑️ Katmanı Temizle</button>
           </div>
         </div>
       </aside>
-
-      <!-- Orta: Tuval -->
       <main id="canvas-area">
         <div id="canvas-container">
           <div id="canvas-wrapper">
-            <!-- Katman canvas'ları buraya dinamik eklenir -->
           </div>
           <div id="selection-overlay" style="display:none;"></div>
         </div>
@@ -215,8 +184,6 @@
             <p>Çizim yapmak için sol panelden bir dosya açın<br>veya yeni bir dosya oluşturun</p>
           </div>
         </div>
-
-        <!-- Zoom Kontrolü -->
         <div id="zoom-controls">
           <button id="btn-zoom-out" class="btn btn-icon" title="Küçült">−</button>
           <span id="zoom-level">100%</span>
@@ -224,10 +191,7 @@
           <button id="btn-zoom-reset" class="btn btn-icon" title="Sıfırla">⟳</button>
         </div>
       </main>
-
-      <!-- Sağ Panel: Katmanlar + Kullanıcılar -->
       <aside id="right-panel">
-        <!-- Katman Yönetimi -->
         <div class="panel-section" id="layers-section">
           <div class="panel-header">
             <h3>◫ Katmanlar</h3>
@@ -237,8 +201,6 @@
             <li class="empty-state">Dosya açılmadı</li>
           </ul>
         </div>
-
-        <!-- Çevrimiçi Kullanıcılar -->
         <div class="panel-section" id="users-section">
           <div class="panel-header">
             <h3>👥 Kullanıcılar</h3>
@@ -250,8 +212,6 @@
         </div>
       </aside>
     </div>
-
-    <!-- Alt Bar -->
     <footer id="bottom-bar">
       <span id="coord-display">X: 0 Y: 0</span>
       <span id="canvas-size-display">-</span>
@@ -259,10 +219,6 @@
       <span id="auto-save-status">💾 Otomatik kaydetme aktif</span>
     </footer>
   </div>
-
-  <!-- ============================================= -->
-  <!-- YENİ DOSYA MODAL -->
-  <!-- ============================================= -->
   <div id="modal-new-file" class="modal" style="display:none;">
     <div class="modal-overlay"></div>
     <div class="modal-content">
@@ -287,7 +243,6 @@
       </div>
     </div>
   </div>
-
   <script src="connection.js"></script>
   <script src="canvas.js"></script>
   <script src="ui.js"></script>

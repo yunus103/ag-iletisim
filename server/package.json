@@ -1,11 +1,14 @@
 {
   "name": "multiuserpaint-server",
-  "version": "1.0.0",
-  "description": "MultiUserPaint TCP Sunucu - Çok kullanıcılı resim düzenleyici sunucusu",
+  "version": "2.0.0",
+  "description": "MultiUserPaint Socket.IO Sunucu - Çok kullanıcılı resim düzenleyici sunucusu (v2 - Socket.IO)",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
-  "keywords": ["tcp", "socket", "paint", "multiuser"],
-  "license": "MIT"
+  "keywords": ["socketio", "websocket", "paint", "multiuser", "realtime"],
+  "license": "MIT",
+  "dependencies": {
+    "socket.io": "^4.8.0"
+  }
 }

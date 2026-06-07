@@ -1,59 +1,68 @@
-# MultiUserPaint — Çok Kullanıcılı Resim Çizme Uygulaması
+# MultiUserPaint — Çok Kullanıcılı Resim Çizme Uygulaması (v2)
 
 Bu proje, birden fazla kullanıcının eş zamanlı olarak bir resim tuvali üzerinde ortaklaşa çizim ve düzenleme yapabilmesini sağlayan bir **Masaüstü Resim Düzenleyici** uygulamasıdır. 
 
-Proje, **Ağ İletişimi** dersi kapsamında geliştirilmiş olup, tamamen **yalın TCP soket mimarisi (raw socket programming)** ve asenkron, olay güdümlü (**NonBlocking**) sunucu yaklaşımı ile kodlanmıştır.
+Proje, **Ağ İletişimi** dersi kapsamında geliştirilmiş olup, birinci aşamada yalın TCP soket programlama ile yazılan iletişim altyapısı, ikinci aşamada **Socket.IO (WebSocket)** üzerine taşınmıştır.
 
 ---
 
 ## 🚀 Proje Mimarisi
 
-*   **Sunucu (Server):** Node.js `net` modülü (Event-Driven & NonBlocking)
-*   **İstemci (Client):** Electron (HTML5 Canvas + CSS3 + Javascript Renderer)
-*   **Protokol:** FTP benzeri Özel TCP Protokolü (`[4-Byte Uzunluk Başlığı] + [JSON Gövde]`)
-*   **Bağımlılık Durumu:** Soket haberleşmesinde 3. parti hiçbir kütüphane (Socket.io, gRPC vb.) **kullanılmamıştır**.
+*   **Sunucu (Server):** Node.js + Socket.IO v4 (WebSocket + HTTP Polling Fallback)
+*   **İstemci (Client):** Electron (HTML5 Canvas + CSS3 + Javascript Renderer) + socket.io-client
+*   **Protokol:** Socket.IO olay tabanlı mesajlaşma (`emit/on`)
+*   **Oda Yönetimi:** Socket.IO Room mekanizması (lobby + dosya odaları)
+*   **Heartbeat:** Socket.IO Engine.IO dahili ping/pong (otomatik)
+*   **Yeniden Bağlanma:** Otomatik reconnection (exponential backoff)
+
+---
+
+## 🔄 Birinci Aşamadan Farklar
+
+| Özellik | v1 (TCP) | v2 (Socket.IO) |
+|---|---|---|
+| Transport | Raw TCP (`net` modülü) | WebSocket (Engine.IO) |
+| Çerçeveleme | Manuel `[4-Byte] + [JSON]` | Otomatik (Engine.IO) |
+| Ayrıştırma | `ProtocolParser` sınıfı | Otomatik JSON |
+| Mesaj Yönlendirme | `switch-case` + `msg.type` | Olay adlarıyla `socket.on()` |
+| Broadcast | Manuel soket döngüsü | `socket.to(room).emit()` |
+| Heartbeat | Manuel `setInterval` | Otomatik `ping/pong` |
+| Yeniden Bağlanma | ❌ Yok | ✅ Otomatik |
+| Oda Yönetimi | Manuel filtre | `socket.join/leave/to` |
 
 ---
 
 ## 🛠️ Kurulum ve Başlatma Rehberi
 
-Sistemdeki olası PowerShell güvenlik kısıtlamalarını (Script çalıştırma engellerini) aşmak amacıyla, komutlar doğrudan `node` ve `npx` aracılığıyla çalıştırılacak şekilde yapılandırılmıştır.
+### Adım 1: Sunucu Bağımlılıklarını Yükleme
+Bir komut satırı açın ve `server` klasörüne gidin:
+```bash
+cd server
+npm install
+```
 
-### Adım 1: İstemci (Client) Bağımlılıklarını Yükleme
-Masaüstü arayüzünü (Electron) bilgisayarınıza kurmak için terminalinizde şu komutları sırasıyla çalıştırın:
-1. Bir komut satırı (CMD veya PowerShell) açın ve `client` klasörüne gidin:
-   ```bash
-   cd client
-   ```
-2. Bağımlılıkları yükleyin:
-   ```bash
-   npm install
-   ```
-
----
-
-### Adım 2: Sunucuyu (Server) Başlatma
-Sunucuyu doğrudan Node.js ile çalıştırarak başlatın:
-1. **Yeni bir komut satırı penceresi** açın ve `server` klasörüne gidin:
-   ```bash
-   cd server
-   ```
-2. Sunucuyu doğrudan Node.js motoruyla ayağa kaldırın:
-   ```bash
-   node index.js
-   ```
-   *Ekranda `dinleniyor: 0.0.0.0:5000` yazısını gördüğünüzde sunucu hazır demektir.*
+### Adım 2: İstemci Bağımlılıklarını Yükleme
+```bash
+cd client
+npm install
+```
 
 ---
 
-### Adım 3: İstemcileri (Arayüzü) Çalıştırma
-Masaüstü uygulamasını çalıştırmak için:
-1. Adım 1'de kullandığınız terminal penceresine (yani `client` konumundaki pencereye) geri dönün.
-2. Arayüzü şu komutla başlatın:
-   ```bash
-   npx electron .
-   ```
-   *Uygulama penceresi başarıyla açılacaktır.*
+### Adım 3: Sunucuyu Başlatma
+```bash
+cd server
+node index.js
+```
+*Ekranda `Dinleniyor: 0.0.0.0:5000` yazısını gördüğünüzde sunucu hazır demektir.*
+
+---
+
+### Adım 4: İstemcileri Çalıştırma
+```bash
+cd client
+npx electron .
+```
 
 ---
 
@@ -87,14 +96,17 @@ Masaüstü uygulamasını çalıştırmak için:
 
 ```text
 ├── shared/
-│   └── protocol.js         # Ortak mesajlaşma kuralları ve TCP Parser
+│   ├── events.js           # Socket.IO olay adları sabitleri (EventType)
+│   └── protocol.js         # [Eski] TCP protokol dosyası (referans için korunuyor)
 ├── server/
-│   ├── index.js            # Ana TCP Sunucusu (Dinleyici)
-│   ├── fileManager.js      # Disk CRUD işlemleri ve otomatik kaydetme motoru
-│   ├── sessionManager.js   # Aktif kullanıcı ve grup oturumu yönetimi
+│   ├── index.js            # Socket.IO Sunucusu (PaintServer sınıfı)
+│   ├── sessionManager.js   # Oturum yönetimi (socket.id tabanlı)
+│   ├── fileManager.js      # Dosya CRUD + otomatik kaydetme
+│   ├── package.json        # socket.io bağımlılığı
 │   └── storage/            # Otomatik kaydedilen tuval JSON dosyaları
 └── client/
-    ├── main.js             # Electron Ana Süreci & TCP Soket bağlantısı
+    ├── main.js             # Electron Main Process + socket.io-client
     ├── preload.js          # IPC Güvenli Köprü Katmanı
+    ├── package.json        # socket.io-client + electron bağımlılığı
     └── renderer/           # Arayüz dosyaları (HTML, CSS, Çizim motoru)
 ```

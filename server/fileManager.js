@@ -1,46 +1,30 @@
 'use strict';
 
-// =====================================================
-// Dosya Yöneticisi (File Manager)
-// Tuval dosyalarının CRUD işlemleri ve otomatik kaydetme
-// =====================================================
-
 const fs = require('fs');
 const path = require('path');
-const { generateId } = require('../shared/protocol');
+const { generateId } = require('../shared/events');
 
 const STORAGE_DIR = path.join(__dirname, 'storage');
-const AUTO_SAVE_INTERVAL = 30000; // 30 saniye
+const AUTO_SAVE_INTERVAL = 30000; 
 
 class FileManager {
   constructor() {
-    // fileId -> dosya metadata eşlemesi
+
     this.files = new Map();
-    // fileId -> değişiklik bayrağı (dirty flag)
+
     this.dirtyFiles = new Set();
 
-    // Storage dizinini oluştur
     if (!fs.existsSync(STORAGE_DIR)) {
       fs.mkdirSync(STORAGE_DIR, { recursive: true });
     }
 
-    // Mevcut dosyaları yükle
     this._loadExistingFiles();
 
-    // Otomatik kaydetme zamanlayıcısı
     this.autoSaveTimer = setInterval(() => this._autoSave(), AUTO_SAVE_INTERVAL);
 
     console.log(`[FileManager] Başlatıldı. Mevcut dosya sayısı: ${this.files.size}`);
   }
 
-  /**
-   * Yeni dosya oluştur
-   * @param {string} owner - Dosya sahibinin kullanıcı adı
-   * @param {string} fileName - Dosya adı
-   * @param {number} width - Tuval genişliği (piksel)
-   * @param {number} height - Tuval yüksekliği (piksel)
-   * @returns {object} Oluşturulan dosya bilgisi
-   */
   createFile(owner, fileName, width = 1200, height = 800) {
     const fileId = generateId();
     const now = Date.now();
@@ -64,7 +48,7 @@ class FileManager {
           actions: [],
         }
       ],
-      editors: [], // Şu an düzenleyen kullanıcılar
+      editors: [], 
     };
 
     this.files.set(fileId, fileData);
@@ -74,10 +58,6 @@ class FileManager {
     return this._getFileInfo(fileId);
   }
 
-  /**
-   * Dosya listesini döndür
-   * @returns {Array} Dosya bilgileri listesi
-   */
   getFileList() {
     const list = [];
     for (const [fileId, file] of this.files) {
@@ -98,17 +78,10 @@ class FileManager {
     return list;
   }
 
-  /**
-   * Dosyayı aç — tam veri döndür
-   * @param {string} fileId
-   * @param {string} username - Açan kullanıcı
-   * @returns {object|null}
-   */
   openFile(fileId, username) {
     const file = this.files.get(fileId);
     if (!file) return null;
 
-    // Editör listesine ekle
     if (!file.editors.includes(username)) {
       file.editors.push(username);
     }
@@ -124,11 +97,6 @@ class FileManager {
     };
   }
 
-  /**
-   * Dosyayı kapat
-   * @param {string} fileId
-   * @param {string} username
-   */
   closeFile(fileId, username) {
     const file = this.files.get(fileId);
     if (!file) return;
@@ -137,11 +105,6 @@ class FileManager {
     this.dirtyFiles.add(fileId);
   }
 
-  /**
-   * Dosya paylaşımını aç/kapat
-   * @param {string} fileId
-   * @param {boolean} shared
-   */
   setShared(fileId, shared) {
     const file = this.files.get(fileId);
     if (file) {
@@ -150,11 +113,6 @@ class FileManager {
     }
   }
 
-  /**
-   * Dosyayı sil
-   * @param {string} fileId
-   * @returns {boolean}
-   */
   deleteFile(fileId) {
     const file = this.files.get(fileId);
     if (!file) return false;
@@ -162,7 +120,6 @@ class FileManager {
     this.files.delete(fileId);
     this.dirtyFiles.delete(fileId);
 
-    // Diskten sil
     const filePath = path.join(STORAGE_DIR, `${fileId}.json`);
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
@@ -172,12 +129,6 @@ class FileManager {
     return true;
   }
 
-  /**
-   * Çizim aksiyonu ekle
-   * @param {string} fileId
-   * @param {string} layerId
-   * @param {object} action - Çizim verisi
-   */
   addDrawAction(fileId, layerId, action) {
     const file = this.files.get(fileId);
     if (!file) return false;
@@ -191,11 +142,6 @@ class FileManager {
     return true;
   }
 
-  /**
-   * Tuvali temizle
-   * @param {string} fileId
-   * @param {string} layerId - null ise tüm katmanlar temizlenir
-   */
   clearCanvas(fileId, layerId = null) {
     const file = this.files.get(fileId);
     if (!file) return false;
@@ -212,14 +158,6 @@ class FileManager {
     return true;
   }
 
-  // --- Katman İşlemleri ---
-
-  /**
-   * Yeni katman ekle
-   * @param {string} fileId
-   * @param {string} name
-   * @returns {object|null} Eklenen katman
-   */
   addLayer(fileId, name) {
     const file = this.files.get(fileId);
     if (!file) return null;
@@ -241,27 +179,18 @@ class FileManager {
     return layer;
   }
 
-  /**
-   * Katman sil
-   * @param {string} fileId
-   * @param {string} layerId
-   * @returns {boolean}
-   */
   removeLayer(fileId, layerId) {
     const file = this.files.get(fileId);
-    if (!file || file.layers.length <= 1) return false; // En az 1 katman olmalı
+    if (!file || file.layers.length <= 1) return false; 
 
     file.layers = file.layers.filter(l => l.id !== layerId);
-    // Sırayı güncelle
+
     file.layers.forEach((l, i) => l.order = i);
     file.modifiedAt = Date.now();
     this.dirtyFiles.add(fileId);
     return true;
   }
 
-  /**
-   * Katman adını değiştir
-   */
   renameLayer(fileId, layerId, newName) {
     const file = this.files.get(fileId);
     if (!file) return false;
@@ -274,9 +203,6 @@ class FileManager {
     return true;
   }
 
-  /**
-   * Katman görünürlüğünü değiştir
-   */
   setLayerVisibility(fileId, layerId, visible) {
     const file = this.files.get(fileId);
     if (!file) return false;
@@ -289,9 +215,6 @@ class FileManager {
     return true;
   }
 
-  /**
-   * Katman opaklığını değiştir
-   */
   setLayerOpacity(fileId, layerId, opacity) {
     const file = this.files.get(fileId);
     if (!file) return false;
@@ -304,9 +227,6 @@ class FileManager {
     return true;
   }
 
-  /**
-   * Katman sırasını değiştir
-   */
   reorderLayers(fileId, layerIds) {
     const file = this.files.get(fileId);
     if (!file) return false;
@@ -326,14 +246,9 @@ class FileManager {
     return false;
   }
 
-  /**
-   * Dosya bilgisini döndür
-   */
   getFileInfo(fileId) {
     return this._getFileInfo(fileId);
   }
-
-  // --- Dahili Yardımcılar ---
 
   _getFileInfo(fileId) {
     const file = this.files.get(fileId);
@@ -358,7 +273,7 @@ class FileManager {
 
     const filePath = path.join(STORAGE_DIR, `${fileId}.json`);
     const dataToSave = { ...file };
-    delete dataToSave.editors; // Editör listesi kalıcı değil
+    delete dataToSave.editors; 
 
     try {
       fs.writeFileSync(filePath, JSON.stringify(dataToSave, null, 2), 'utf8');
@@ -385,7 +300,7 @@ class FileManager {
       try {
         const filePath = path.join(STORAGE_DIR, fileName);
         const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-        data.editors = []; // Editör listesini sıfırla
+        data.editors = []; 
         this.files.set(data.fileId, data);
       } catch (err) {
         console.error(`[FileManager] Dosya yükleme hatası (${fileName}):`, err.message);
@@ -393,12 +308,9 @@ class FileManager {
     }
   }
 
-  /**
-   * Temizlik — sunucu kapanırken çağrılır
-   */
   shutdown() {
     clearInterval(this.autoSaveTimer);
-    this._autoSave(); // Son kaydetme
+    this._autoSave(); 
     console.log('[FileManager] Kapatıldı.');
   }
 }

@@ -1,5 +1,5 @@
 ======================================================================
-                 AG ILETISIMI DERSI - I. PROJE TESLIMI
+                 AG ILETISIMI DERSI - II. PROJE TESLIMI
            COK KULLANICILI ORTAK RESIM CIZME UYGULAMASI
                        TESLIM BILGI DOSYASI
 ======================================================================
@@ -13,16 +13,20 @@ bulunmalidir. Bilgisi bulunmayan ogrenci gruba dahil kabul edilmez.)
 Grup Adi / Takma Adi: [Varsa yaziniz veya bos birakiniz]
 
 * Ogrenci 1:
-  - Adi Soyadi: [BURAYA YAZINIZ]
-  - Ogrenci No: [BURAYA YAZINIZ]
+  - Adi Soyadi: Yunus Emre Aytekin
+  - Ogrenci No: 1306210040
 
 * Ogrenci 2:
-  - Adi Soyadi: [BURAYA YAZINIZ]
-  - Ogrenci No: [BURAYA YAZINIZ]
+  - Adi Soyadi: Eren Sel
+  - Ogrenci No: 1306220174
 
 * Ogrenci 3:
-  - Adi Soyadi: [BURAYA YAZINIZ]
-  - Ogrenci No: [BURAYA YAZINIZ]
+  - Adi Soyadi: Zübeyir Ali Demir
+  - Ogrenci No: 1306220106
+
+* Ogrenci 4:
+  - Adi Soyadi: Yusuf Asan
+  - Ogrenci No: 1306220078
 
 ----------------------------------------------------------------------
 2. PROJE TANITIM VE ANLATIM VIDEOSU YOLU (GOOGLE DRIVE)
@@ -39,51 +43,54 @@ acik oldugundan emin olunuz!)
 ----------------------------------------------------------------------
 3. PROJE KLASOR YAPISI VE KRITIK KOD BLOGU ACIKLAMASI
 ----------------------------------------------------------------------
-Proje tamamen yalin soket haberleşmesi (net modulu) ile asenkron ve 
-olay gudumlu (NonBlocking) olarak JavaScript dilinde kodlanmistir.
+Proje hazır iletişim altyapısı olarak Socket.IO framework'ü (WebSocket 
+ve HTTP Polling geri dönüşü) kullanılarak olay güdümlü ve bloke etmeyen 
+(NonBlocking) yapıda JavaScript dilinde kodlanmıştır.
 
 * shared/
-  - protocol.js: Ortak mesaj tipleri (MessageType), FTP benzeri ozel
-    TCP paket cerceveleme/kodlama (encode) fonksiyonu ve paketleri 
-    ayristiran sonlu durum parser'i (ProtocolParser) barindirir.
+  - events.js: Sistemde kullanılan Socket.IO olay (event) tiplerini ve
+    oturum kimlik üretecini (generateId) barındırır.
 
 * server/
-  - index.js: Ana TCP Sunucusu (Dinleyici). Baglantilari kabul eder 
-    ve gelen paketleri parser'a besleyerek ilgili event'leri tetikler.
-  - fileManager.js: Disk CRUD islemlerini ve degisiklik yapilan dosyalari
-    30 saniyede bir diske yazan otomatik kaydetme motorunu yonetir.
-  - sessionManager.js: Aktif kullanici oturumlarini, tekil id'leri ve
-    hangi kullanicinin hangi dosyayi duzenledigini takip eder.
-  - storage/: Sunucuda otomatik kaydedilen tuval JSON dosyalarinin
-    saklandigi kalici klasordur.
+  - index.js: HTTP + Socket.IO Sunucusu. Bağlantıları kabul eder,
+    Socket.IO odalarını (lobby ve file:${fileId}) yönetir ve gelen
+    olaylara göre istemcilere veri yayını (broadcast/emit) yapar.
+  - fileManager.js: Disk CRUD işlemlerini ve değişiklik yapılan dosyaları
+    30 saniyede bir diske yazan otomatik kaydetme motorunu yönetir.
+  - sessionManager.js: Aktif kullanıcı oturumlarını, tekil id'leri ve
+    hangi kullanıcının hangi dosyayı düzenlediğini takip eder.
+  - storage/: Sunucuda otomatik kaydedilen tuval JSON dosyalarının
+    saklandığı kalıcı klasördür.
 
 * client/
-  - main.js: Electron Ana Sureci (Main Process). Sunucu ile dogrudan 
-    TCP soket baglantisini acar ve kapatir.
-  - preload.js: IPC Guvenli Kopru Katmani (ContextBridge). Renderer surecine
-    soket API'sini guvenli sekilde sunar.
-  - renderer/: Arayuz dosyalarini (index.html, styles.css), cizim ve 
-    katman motorunu (canvas.js, app.js, ui.js) barindirir.
+  - main.js: Electron Ana Süreci (Main Process). Sunucu ile Socket.IO
+    bağlantısını açar, yönetir ve soket olaylarını IPC (Inter-Process 
+    Communication) üzerinden Renderer sürecine iletir.
+  - preload.js: IPC Güvenli Köprü Katmanı (ContextBridge). Renderer sürecine
+    Socket.IO API'lerini güvenli şekilde sunar.
+  - renderer/: Arayüz dosyalarını (index.html, styles.css), çizim ve 
+    katman motorunu (canvas.js, app.js, ui.js) barındırır.
 
 ----------------------------------------------------------------------
 4. KURULUM VE CALISTIRMA ADIMLARI
 ----------------------------------------------------------------------
-Projenin hocanin sisteminde clean sonrasi calismasi icin asagidaki adimlar
-uygulanmalidir:
+Projenin hocanın sisteminde clean sonrası çalışması için aşağıdaki adımlar
+uygulanmalıdır:
 
-1. Adim: Istemci (Client) Bagimliliklarini Yukleme
-   Terminalden "client" klasorune gidip "npm install" calistirin.
-   (Teslim paketi 8MB limitinde olabilmesi icin "node_modules" silinmis
+1. Adım: İstemci (Client) Bağımlılıklarını Yükleme
+   Terminalden "client" klasörüne gidip "npm install" çalıştırın.
+   (Teslim paketi 8MB limitinde olabilmesi için "node_modules" silinmis
    olarak teslim edilmektedir. Bu komut eksik paketleri kurar.)
 
-2. Adim: Sunucuyu (Server) Baslatma
-   Yeni bir terminal penceresinde "server" klasorune gidin ve sunucuyu 
-   baslatin:
+2. Adım: Sunucu (Server) Bağımlılıklarını Yükleme ve Başlatma
+   Yeni bir terminal penceresinde "server" klasörüne gidin.
+   Bağımlılıkları yüklemek için "npm install" çalıştırın.
+   Ardından sunucuyu başlatın:
    > node index.js
 
-3. Adim: Istemcileri (Arayuzleri) Calistirma
-   "client" klasorune gidip Electron arayuzunu calistirin:
+3. Adım: İstemcileri (Arayüzleri) Çalıştırma
+   "client" klasörüne gidip Electron arayüzünü çalıştırın:
    > npx electron .
-   (Cok kullanicili test senaryosu icin bu komutu birden fazla terminalde 
-   ayri ayri calistirarak birden fazla ekran acabilirsiniz.)
+   (Çok kullanıcılı test senaryosu için bu komutu birden fazla terminalde 
+   ayrı ayrı çalıştırarak birden fazla ekran açabilirsiniz.)
 ======================================================================
